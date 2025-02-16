@@ -32,6 +32,13 @@ let editingLine = null;
 let editLengthInput = '';
 let tooltipText = '';
 
+// Add these variables at the top
+let snapPoint = null;
+let snapDistance = 10;
+
+// Add this variable at the top with other state variables
+let hoverSnapPoint = null;
+
 function saveState(action) {
     redoStack = [];
     undoStack.push({
@@ -417,9 +424,61 @@ function getPointOnLine(mousePoint, line) {
     };
 }
 
+function findNearestSnapPoint(mousePoint) {
+    let minDist = snapDistance * Math.sqrt(zoomLevel);
+    let nearest = null;
+    let mousePointPx = { x: mousePoint.x, y: mousePoint.y };
+
+    // Check line endpoints
+    for (let line of lines) {
+        let startPx = gridToPixel(line.start);
+        let endPx = gridToPixel(line.end);
+
+        let distToStart = dist(mousePointPx.x, mousePointPx.y, startPx.x, startPx.y);
+        let distToEnd = dist(mousePointPx.x, mousePointPx.y, endPx.x, endPx.y);
+
+        if (distToStart < minDist) {
+            minDist = distToStart;
+            nearest = line.start;
+        }
+        if (distToEnd < minDist) {
+            minDist = distToEnd;
+            nearest = line.end;
+        }
+    }
+
+    // Check points
+    for (let point of points) {
+        let pointPx = gridToPixel(point);
+        let distToPoint = dist(mousePointPx.x, mousePointPx.y, pointPx.x, pointPx.y);
+
+        if (distToPoint < minDist) {
+            minDist = distToPoint;
+            nearest = point;
+        }
+    }
+
+    return nearest;
+}
+
 function mouseMoved() {
-    if (isDrawMode && startPoint) {
-        tempEndPoint = snapToGrid({ x: mouseX, y: mouseY });
+    if (isDrawMode) {
+        let mousePoint = { x: mouseX, y: mouseY };
+
+        // Always check for snap points when in draw mode
+        if (startPoint) {
+            snapPoint = findNearestSnapPoint(mousePoint);
+            if (snapPoint) {
+                tempEndPoint = snapPoint;
+                hoverSnapPoint = null;
+            } else {
+                tempEndPoint = snapToGrid(mousePoint);
+                hoverSnapPoint = null;
+            }
+        } else {
+            // Show hover snap indicator before starting to draw
+            hoverSnapPoint = findNearestSnapPoint(mousePoint);
+        }
         redrawAll();
     } else if (isPointMode) {
         let mousePoint = { x: mouseX, y: mouseY };
@@ -437,6 +496,7 @@ function mouseMoved() {
         }
         updateTooltip();
         redrawAll();
+        hoverSnapPoint = null;
     }
 }
 
@@ -508,9 +568,14 @@ function mousePressed() {
         redrawAll();
     } else if (isDrawMode) {
         if (!startPoint) {
-            startPoint = snapToGrid({ x: mouseX, y: mouseY });
+            let mousePoint = { x: mouseX, y: mouseY };
+            startPoint = hoverSnapPoint || snapToGrid(mousePoint);
+            hoverSnapPoint = null;
         } else {
-            let endPoint = snapToGrid({ x: mouseX, y: mouseY });
+            let mousePoint = { x: mouseX, y: mouseY };
+            snapPoint = findNearestSnapPoint(mousePoint);
+            let endPoint = snapPoint || snapToGrid(mousePoint);
+
             lines.push({
                 start: startPoint,
                 end: endPoint
@@ -518,6 +583,7 @@ function mousePressed() {
             saveState('add_line');
             startPoint = null;
             tempEndPoint = null;
+            snapPoint = null;
             redrawAll();
         }
     } else if (isSelectMode) {
@@ -694,6 +760,34 @@ function redrawAll() {
         drawLineLength(previewLine);
     }
 
+    // Draw hover snap preview
+    if (isDrawMode && hoverSnapPoint) {
+        let snapPx = gridToPixel(hoverSnapPoint);
+        stroke(0, 0, 255);
+        strokeWeight(1);
+        let size = 6 * Math.sqrt(zoomLevel);
+        line(snapPx.x - size, snapPx.y - size, snapPx.x + size, snapPx.y + size);
+        line(snapPx.x - size, snapPx.y + size, snapPx.x + size, snapPx.y - size);
+
+        // Draw a circle around the snap point
+        noFill();
+        circle(snapPx.x, snapPx.y, size * 2);
+    }
+
+    // Draw snap preview for active drawing
+    if (isDrawMode && snapPoint) {
+        let snapPx = gridToPixel(snapPoint);
+        stroke(0, 0, 255);
+        strokeWeight(1);
+        let size = 6 * Math.sqrt(zoomLevel);
+        line(snapPx.x - size, snapPx.y - size, snapPx.x + size, snapPx.y + size);
+        line(snapPx.x - size, snapPx.y + size, snapPx.x + size, snapPx.y - size);
+
+        // Draw a circle around the snap point
+        noFill();
+        circle(snapPx.x, snapPx.y, size * 2);
+    }
+
     if (isDrawMode && startPoint && tempEndPoint) {
         let previewLine = {
             start: startPoint,
@@ -860,9 +954,9 @@ function updateTooltip() {
         tooltipText = "Type new length and press Enter to confirm, Esc to cancel";
     } else if (isDrawMode) {
         if (!startPoint) {
-            tooltipText = "Click to set start point of line";
+            tooltipText = hoverSnapPoint ? "Click to start line from snap point" : "Click to set start point of line";
         } else {
-            tooltipText = "Click to set end point of line";
+            tooltipText = snapPoint ? "Click to end line at snap point" : "Click to set end point of line";
         }
     } else if (isPointMode) {
         if (highlightedLine) {
