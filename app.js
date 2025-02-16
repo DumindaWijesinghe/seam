@@ -30,6 +30,7 @@ let redoStack = [];
 let isEditingLength = false;
 let editingLine = null;
 let editLengthInput = '';
+let tooltipText = '';
 
 function saveState(action) {
     redoStack = [];
@@ -113,11 +114,16 @@ function setup() {
     noFill();
     stroke(0);
 
+    // Load JetBrains Mono font
+    textFont('JetBrains Mono');
+
     drawLineButton();
     drawSnapButton();
     drawSelectButton();
     drawPointButton();
     drawZoomSlider();
+
+    updateTooltip();
 }
 
 function drawCmGrid(scale) {
@@ -449,6 +455,7 @@ function mouseMoved() {
                 minDist = d;
             }
         }
+        updateTooltip();
         redrawAll();
     }
 }
@@ -471,6 +478,7 @@ function mousePressed() {
             selectedLine = null;
             selectedPoint = null;
         }
+        updateTooltip();
         redrawAll();
         return;
     }
@@ -486,6 +494,7 @@ function mousePressed() {
             startPoint = null;
             tempEndPoint = null;
         }
+        updateTooltip();
         redrawAll();
         return;
     }
@@ -502,6 +511,7 @@ function mousePressed() {
             isDrawMode = false;
             isPointMode = false;
         }
+        updateTooltip();
         redrawAll();
         return;
     }
@@ -628,6 +638,8 @@ function mouseDragged() {
             redrawAll();
         }
     }
+    updateTooltip();
+    redrawAll();
 }
 
 function mouseReleased() {
@@ -643,6 +655,7 @@ function mouseReleased() {
         selectedHandle = null;
         redrawAll();
     }
+    updateTooltip();
 }
 
 function redrawAll() {
@@ -714,6 +727,27 @@ function redrawAll() {
         line(startPx.x, startPx.y, endPx.x, endPx.y);
         drawLineLength(previewLine);
     }
+
+    // Draw tooltip bar at the bottom
+    let barHeight = 30;
+    let padding = 10;
+
+    // Draw bar background with slightly darker color
+    fill(235);
+    stroke(200);
+    strokeWeight(1);
+    rect(0, height - barHeight, width, barHeight);
+
+    // Draw tooltip text with monospace font and gray color
+    textFont('JetBrains Mono');
+    fill(80);  // Darker gray for text
+    noStroke();
+    textAlign(LEFT, CENTER);
+    textSize(13);
+    text(tooltipText, padding, height - barHeight / 2);
+
+    // Reset font for other text
+    textFont('sans-serif');
 }
 
 function distToSegment(p, v, w) {
@@ -839,4 +873,38 @@ function updateLineLength(line, newLength) {
     // Update any points attached to the line
     let attachedPoints = findPointsOnLine(line);
     updatePointsOnLine(line, attachedPoints);
+}
+
+function updateTooltip() {
+    if (isEditingLength) {
+        tooltipText = "Type new length and press Enter to confirm, Esc to cancel";
+    } else if (isDrawMode) {
+        if (!startPoint) {
+            tooltipText = "Click to set start point of line";
+        } else {
+            tooltipText = "Click to set end point of line";
+        }
+    } else if (isPointMode) {
+        if (highlightedLine) {
+            tooltipText = "Click to place point on line";
+        } else {
+            tooltipText = "Click to place point, hover over line to snap";
+        }
+    } else if (isSelectMode) {
+        if (selectedLine) {
+            if (selectedHandle) {
+                tooltipText = "Drag handle to resize line, click elsewhere to deselect";
+            } else if (isDraggingLine) {
+                tooltipText = "Drag to move line, click elsewhere to deselect";
+            } else {
+                tooltipText = "Drag line or handles to edit, click length to edit value";
+            }
+        } else if (selectedPoint) {
+            tooltipText = "Drag to move point, click elsewhere to deselect";
+        } else {
+            tooltipText = "Click line or point to select";
+        }
+    } else {
+        tooltipText = "Select a tool to start drawing";
+    }
 } 
