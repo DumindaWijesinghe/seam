@@ -26,6 +26,11 @@ let dragStartPoint = null;
 let undoStack = [];
 let redoStack = [];
 
+// Add these variables at the top with other state variables
+let isEditingLength = false;
+let editingLine = null;
+let editLengthInput = '';
+
 function saveState(action) {
     redoStack = [];
     undoStack.push({
@@ -67,6 +72,35 @@ function keyPressed() {
             redo();
         } else {
             undo();
+        }
+        return false;
+    }
+
+    if (isEditingLength) {
+        if (keyCode === ENTER || keyCode === RETURN) {
+            let newLength = parseFloat(editLengthInput);
+            if (!isNaN(newLength) && newLength > 0) {
+                updateLineLength(editingLine, newLength);
+                saveState('resize');
+            }
+            isEditingLength = false;
+            editingLine = null;
+            editLengthInput = '';
+            redrawAll();
+        } else if (keyCode === ESCAPE) {
+            isEditingLength = false;
+            editingLine = null;
+            editLengthInput = '';
+            redrawAll();
+        } else if (keyCode === BACKSPACE) {
+            editLengthInput = editLengthInput.slice(0, -1);
+            redrawAll();
+        } else if ((keyCode >= 48 && keyCode <= 57) || keyCode === 190) {
+            // Allow numbers and decimal point
+            let char = String.fromCharCode(keyCode);
+            if (keyCode === 190) char = '.';
+            editLengthInput += char;
+            redrawAll();
         }
         return false;
     }
@@ -251,7 +285,6 @@ function drawLineLength(line) {
     let strokeOffset = (line === selectedLine && isSelectMode ? 2 : 1) * Math.sqrt(zoomLevel);
 
     let angle = atan2(endPx.y - startPx.y, endPx.x - startPx.x);
-
     if (angle > 90) angle -= 180;
     if (angle < -90) angle += 180;
 
@@ -259,14 +292,28 @@ function drawLineLength(line) {
     translate(midX, midY);
     rotate(angle);
 
+    // Draw the text background
     fill(255, 255, 255, 200);
     noStroke();
     textAlign(CENTER, CENTER);
     textSize(scaledTextSize);
-    text(length + 'cm', 0, -strokeOffset - scaledTextSize / 2);
 
+    let displayText = isEditingLength && line === editingLine ?
+        editLengthInput + 'cm' :
+        length + 'cm';
+
+    // Make the background slightly larger when editing
+    let padding = isEditingLength && line === editingLine ? 10 : 5;
+    let textWidth = displayText.length * scaledTextSize * 0.6;
+    rect(-textWidth / 2 - padding, -strokeOffset - scaledTextSize - padding,
+        textWidth + padding * 2, scaledTextSize + padding * 2, 5);
+
+    // Draw the text
     fill(0);
-    text(length + 'cm', 0, -strokeOffset - scaledTextSize / 2);
+    if (isEditingLength && line === editingLine) {
+        fill(0, 0, 255);
+    }
+    text(displayText, 0, -strokeOffset - scaledTextSize / 2);
 
     pop();
     noFill();
@@ -525,6 +572,13 @@ function mousePressed() {
         }
         redrawAll();
     }
+
+    // Check if clicking on a length label
+    for (let l of lines) {
+        if (startEditingLength(l, mouseX, mouseY)) {
+            return;
+        }
+    }
 }
 
 function mouseDragged() {
@@ -739,4 +793,50 @@ function updatePointsOnLine(line, attachedPoints) {
         ap.point.x = newPos.x;
         ap.point.y = newPos.y;
     }
+}
+
+// Add this function to handle length editing
+function startEditingLength(line, mx, my) {
+    let startPx = gridToPixel(line.start);
+    let endPx = gridToPixel(line.end);
+    let midX = (startPx.x + endPx.x) / 2;
+    let midY = (startPx.y + endPx.y) / 2;
+    let length = calculateLength(line.start, line.end);
+    let scaledTextSize = 12 * Math.sqrt(zoomLevel);
+    let strokeOffset = (line === selectedLine && isSelectMode ? 2 : 1) * Math.sqrt(zoomLevel);
+
+    // Check if click is near the length label
+    let labelY = midY - strokeOffset - scaledTextSize / 2;
+    let clickDistance = dist(mx, my, midX, labelY);
+
+    if (clickDistance < 20 * Math.sqrt(zoomLevel)) {
+        isEditingLength = true;
+        editingLine = line;
+        editLengthInput = length;
+        return true;
+    }
+    return false;
+}
+
+// Add this function to update line length
+function updateLineLength(line, newLength) {
+    let currentLength = parseFloat(calculateLength(line.start, line.end));
+    if (isNaN(newLength) || newLength <= 0) return;
+
+    // Calculate the scale factor
+    let scale = newLength / currentLength;
+
+    // Calculate the direction vector
+    let dx = line.end.x - line.start.x;
+    let dy = line.end.y - line.start.y;
+
+    // Update the end point while keeping the start point fixed
+    line.end = {
+        x: line.start.x + dx * scale,
+        y: line.start.y + dy * scale
+    };
+
+    // Update any points attached to the line
+    let attachedPoints = findPointsOnLine(line);
+    updatePointsOnLine(line, attachedPoints);
 } 
