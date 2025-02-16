@@ -2,6 +2,13 @@
 
 A web-based tool for creating and manipulating sewing patterns with parametric controls. Built with p5.js, this application aims to revolutionize pattern drafting by providing a digital, precise, and interactive environment.
 
+## Screenshots
+
+![Seam Pattern Drafting Interface](screenshots/main-interface.jpg)
+
+The interface shows the main drawing canvas with the toolbar on the left, featuring line, snap, select and point tools. The grid system and measurements are visible, demonstrating the precise nature of the pattern drafting environment.
+
+
 ## Motivation
 
 Traditional pattern drafting methods often involve manual measurements, paper patterns, and complex calculations. Seam aims to modernize this process by:
