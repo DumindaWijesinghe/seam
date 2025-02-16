@@ -179,44 +179,24 @@ function drawLineButton() {
     fill(isDrawMode ? 150 : 200);
     stroke(0);
     rect(20, 20, 40, 40);
-    fill(0);
-    textSize(12);
-    textAlign(CENTER, CENTER);
-    text('LINE', 40, 40);
-    noFill();
 }
 
 function drawSnapButton() {
     fill(isSnapMode ? 150 : 200);
     stroke(0);
     rect(70, 20, 40, 40);
-    fill(0);
-    textSize(12);
-    textAlign(CENTER, CENTER);
-    text('SNAP', 90, 40);
-    noFill();
 }
 
 function drawSelectButton() {
     fill(isSelectMode ? 150 : 200);
     stroke(0);
     rect(120, 20, 40, 40);
-    fill(0);
-    textSize(12);
-    textAlign(CENTER, CENTER);
-    text('SELECT', 140, 40);
-    noFill();
 }
 
 function drawPointButton() {
     fill(isPointMode ? 150 : 200);
     stroke(0);
     rect(170, 20, 40, 40);
-    fill(0);
-    textSize(12);
-    textAlign(CENTER, CENTER);
-    text('POINT', 190, 40);
-    noFill();
 }
 
 function drawZoomSlider() {
