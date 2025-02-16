@@ -1,6 +1,10 @@
 let isDrawMode = false;
 let isSelectMode = false;
 let isPointMode = false;
+let isCurveMode = false;  // New state for curve tool
+let curves = [];  // Store curves: {start, end, control1, control2}
+let selectedCurve = null;
+let selectedControlPoint = null;
 let startPoint = null;
 let tempEndPoint = null;
 let lines = []; // Will now store positions in grid units
@@ -39,12 +43,16 @@ let snapDistance = 10;
 // Add this variable at the top with other state variables
 let hoverSnapPoint = null;
 
+// Add to the top with other state variables
+let curveCache = new Map(); // Cache for curve lengths
+
 function saveState(action) {
     redoStack = [];
     undoStack.push({
         action: action,
         lines: JSON.parse(JSON.stringify(lines)),
-        points: JSON.parse(JSON.stringify(points))
+        points: JSON.parse(JSON.stringify(points)),
+        curves: JSON.parse(JSON.stringify(curves))
     });
 }
 
@@ -52,11 +60,13 @@ function undo() {
     if (undoStack.length > 0) {
         redoStack.push({
             lines: JSON.parse(JSON.stringify(lines)),
-            points: JSON.parse(JSON.stringify(points))
+            points: JSON.parse(JSON.stringify(points)),
+            curves: JSON.parse(JSON.stringify(curves))
         });
         let prevState = undoStack.pop();
         lines = prevState.lines;
         points = prevState.points;
+        curves = prevState.curves;
         redrawAll();
     }
 }
@@ -65,11 +75,13 @@ function redo() {
     if (redoStack.length > 0) {
         undoStack.push({
             lines: JSON.parse(JSON.stringify(lines)),
-            points: JSON.parse(JSON.stringify(points))
+            points: JSON.parse(JSON.stringify(points)),
+            curves: JSON.parse(JSON.stringify(curves))
         });
         let nextState = redoStack.pop();
         lines = nextState.lines;
         points = nextState.points;
+        curves = nextState.curves;
         redrawAll();
     }
 }
@@ -128,6 +140,7 @@ function setup() {
     drawSnapButton();
     drawSelectButton();
     drawPointButton();
+    drawCurveButton();
     drawZoomSlider();
 
     updateTooltip();
@@ -204,6 +217,12 @@ function drawPointButton() {
     fill(isPointMode ? 150 : 200);
     stroke(0);
     rect(170, 20, 40, 40);
+}
+
+function drawCurveButton() {
+    fill(isCurveMode ? 150 : 200);
+    stroke(0);
+    rect(220, 20, 40, 40);
 }
 
 function drawZoomSlider() {
@@ -335,7 +354,10 @@ function drawPoints() {
     for (let p of points) {
         let pointPx = gridToPixel(p);
 
-        // Find if point is on any line
+        // Find if point is on any line or curve
+        let isOnElement = false;
+
+        // Check lines
         for (let l of lines) {
             let d = distToSegment(pointPx, gridToPixel(l.start), gridToPixel(l.end));
             if (d < 0.1) {
@@ -343,21 +365,24 @@ function drawPoints() {
                 let distToStart = calculateLength(p, l.start);
                 let distToEnd = calculateLength(p, l.end);
 
-                let scaledTextSize = 10 * Math.sqrt(zoomLevel);
-                fill(255, 255, 255, 200);
-                noStroke();
-                textAlign(LEFT, BOTTOM);
-                textSize(scaledTextSize);
-
-                // Draw background for distances
-                text(distToStart + 'cm', pointPx.x + 5, pointPx.y - 5);
-                text(distToEnd + 'cm', pointPx.x + 5, pointPx.y + 15);
-
-                // Draw text
-                fill(0);
-                text(distToStart + 'cm', pointPx.x + 5, pointPx.y - 5);
-                text(distToEnd + 'cm', pointPx.x + 5, pointPx.y + 15);
+                drawPointDistances(pointPx, distToStart, distToEnd);
+                isOnElement = true;
                 break;
+            }
+        }
+
+        // Check curves if not already on a line
+        if (!isOnElement) {
+            for (let c of curves) {
+                if (isPointOnCurve(p, c)) {
+                    // Calculate distances along the curve
+                    let distToStart = calculateCurveDistanceToPoint(c, p, true);
+                    let distToEnd = calculateCurveDistanceToPoint(c, p, false);
+
+                    drawPointDistances(pointPx, distToStart, distToEnd);
+                    isOnElement = true;
+                    break;
+                }
             }
         }
 
@@ -376,35 +401,101 @@ function drawPoints() {
     }
     noFill();
 
-    // Draw preview point with distances when snapping
-    if (isPointMode && nearestPointOnLine && highlightedLine) {
+    // Draw preview point with distances
+    if (isPointMode && nearestPointOnLine) {
         let previewPx = gridToPixel(nearestPointOnLine);
 
-        // Calculate distances to line ends
-        let distToStart = calculateLength(nearestPointOnLine, highlightedLine.start);
-        let distToEnd = calculateLength(nearestPointOnLine, highlightedLine.end);
-
-        let scaledTextSize = 10 * Math.sqrt(zoomLevel);
-
-        // Draw preview point in blue
+        // Draw the preview point
         fill(0, 0, 255);
         stroke(0, 0, 255);
         let scaledRadius = 4 * Math.sqrt(zoomLevel);
         circle(previewPx.x, previewPx.y, scaledRadius * 2);
 
-        // Draw background for distances
-        fill(255, 255, 255, 200);
-        noStroke();
-        textAlign(LEFT, BOTTOM);
-        textSize(scaledTextSize);
-        text(distToStart + 'cm', previewPx.x + 5, previewPx.y - 5);
-        text(distToEnd + 'cm', previewPx.x + 5, previewPx.y + 15);
-
-        // Draw text in blue
-        fill(0, 0, 255);
-        text(distToStart + 'cm', previewPx.x + 5, previewPx.y - 5);
-        text(distToEnd + 'cm', previewPx.x + 5, previewPx.y + 15);
+        // If hovering over a curve, show distances
+        if (highlightedLine === null) {  // We use null highlightedLine to indicate curve
+            for (let c of curves) {
+                let nearestPoint = getNearestPointOnCurve({ x: mouseX, y: mouseY }, c);
+                if (nearestPoint.distance < 10 * Math.sqrt(zoomLevel)) {
+                    let distToStart = calculateCurveDistanceToPoint(c, nearestPointOnLine, true);
+                    let distToEnd = calculateCurveDistanceToPoint(c, nearestPointOnLine, false);
+                    drawPointDistances(previewPx, distToStart, distToEnd);
+                    break;
+                }
+            }
+        }
     }
+}
+
+function drawPointDistances(pointPx, distToStart, distToEnd) {
+    let scaledTextSize = 10 * Math.sqrt(zoomLevel);
+
+    // Draw background for distances
+    fill(255, 255, 255, 200);
+    noStroke();
+    textAlign(LEFT, BOTTOM);
+    textSize(scaledTextSize);
+    text(distToStart + 'cm', pointPx.x + 5, pointPx.y - 5);
+    text(distToEnd + 'cm', pointPx.x + 5, pointPx.y + 15);
+
+    // Draw text
+    fill(0);
+    text(distToStart + 'cm', pointPx.x + 5, pointPx.y - 5);
+    text(distToEnd + 'cm', pointPx.x + 5, pointPx.y + 15);
+}
+
+function isPointOnCurve(point, curve) {
+    let pointPx = gridToPixel(point);
+    let startPx = gridToPixel(curve.start);
+    let endPx = gridToPixel(curve.end);
+    let control1Px = gridToPixel(curve.control1);
+    let control2Px = gridToPixel(curve.control2);
+
+    // Increase sampling rate for more accurate detection
+    for (let t = 0; t <= 1; t += 0.01) {  // Changed from 0.05 to 0.01
+        let px = bezierPoint(startPx.x, control1Px.x, control2Px.x, endPx.x, t);
+        let py = bezierPoint(startPx.y, control1Px.y, control2Px.y, endPx.y, t);
+        if (dist(pointPx.x, pointPx.y, px, py) < 1) {  // Changed from 0.1 to 1 for better snapping
+            return true;
+        }
+    }
+    return false;
+}
+
+function calculateCurveDistanceToPoint(curve, point, fromStart) {
+    let pointPx = gridToPixel(point);
+    let startPx = gridToPixel(curve.start);
+    let endPx = gridToPixel(curve.end);
+    let control1Px = gridToPixel(curve.control1);
+    let control2Px = gridToPixel(curve.control2);
+
+    let totalLength = 0;
+    let targetLength = 0;
+    let foundPoint = false;
+    let prevX = startPx.x;
+    let prevY = startPx.y;
+
+    // Increase sampling rate for more accurate distance calculation
+    for (let t = 0; t <= 1; t += 0.01) {  // Changed from 0.05 to 0.01
+        let px = bezierPoint(startPx.x, control1Px.x, control2Px.x, endPx.x, t);
+        let py = bezierPoint(startPx.y, control1Px.y, control2Px.y, endPx.y, t);
+
+        if (t > 0) {
+            let segmentLength = dist(prevX, prevY, px, py);
+            totalLength += segmentLength;
+
+            if (!foundPoint && dist(pointPx.x, pointPx.y, px, py) < 1) {  // Changed from 0.1 to 1
+                targetLength = totalLength;
+                foundPoint = true;
+            }
+        }
+
+        prevX = px;
+        prevY = py;
+    }
+
+    // Convert to grid units
+    let length = fromStart ? targetLength : (totalLength - targetLength);
+    return (length / (gridSize * zoomLevel)).toFixed(1);
 }
 
 function getPointOnLine(mousePoint, line) {
@@ -425,17 +516,18 @@ function getPointOnLine(mousePoint, line) {
 }
 
 function findNearestSnapPoint(mousePoint) {
+    if (!isSnapMode) return null;
+
     let minDist = snapDistance * Math.sqrt(zoomLevel);
     let nearest = null;
-    let mousePointPx = { x: mousePoint.x, y: mousePoint.y };
 
     // Check line endpoints
     for (let line of lines) {
         let startPx = gridToPixel(line.start);
         let endPx = gridToPixel(line.end);
 
-        let distToStart = dist(mousePointPx.x, mousePointPx.y, startPx.x, startPx.y);
-        let distToEnd = dist(mousePointPx.x, mousePointPx.y, endPx.x, endPx.y);
+        let distToStart = dist(mousePoint.x, mousePoint.y, startPx.x, startPx.y);
+        let distToEnd = dist(mousePoint.x, mousePoint.y, endPx.x, endPx.y);
 
         if (distToStart < minDist) {
             minDist = distToStart;
@@ -447,10 +539,28 @@ function findNearestSnapPoint(mousePoint) {
         }
     }
 
+    // Check curve endpoints
+    for (let curve of curves) {
+        let startPx = gridToPixel(curve.start);
+        let endPx = gridToPixel(curve.end);
+
+        let distToStart = dist(mousePoint.x, mousePoint.y, startPx.x, startPx.y);
+        let distToEnd = dist(mousePoint.x, mousePoint.y, endPx.x, endPx.y);
+
+        if (distToStart < minDist) {
+            minDist = distToStart;
+            nearest = curve.start;
+        }
+        if (distToEnd < minDist) {
+            minDist = distToEnd;
+            nearest = curve.end;
+        }
+    }
+
     // Check points
     for (let point of points) {
         let pointPx = gridToPixel(point);
-        let distToPoint = dist(mousePointPx.x, mousePointPx.y, pointPx.x, pointPx.y);
+        let distToPoint = dist(mousePoint.x, mousePoint.y, pointPx.x, pointPx.y);
 
         if (distToPoint < minDist) {
             minDist = distToPoint;
@@ -462,30 +572,31 @@ function findNearestSnapPoint(mousePoint) {
 }
 
 function mouseMoved() {
-    if (isDrawMode) {
-        let mousePoint = { x: mouseX, y: mouseY };
+    let mousePoint = { x: mouseX, y: mouseY };
 
-        // Always check for snap points when in draw mode
-        if (startPoint) {
-            snapPoint = findNearestSnapPoint(mousePoint);
-            if (snapPoint) {
-                tempEndPoint = snapPoint;
-                hoverSnapPoint = null;
-            } else {
-                tempEndPoint = snapToGrid(mousePoint);
-                hoverSnapPoint = null;
-            }
+    if (isDrawMode || isCurveMode) {
+        // Clear previous states
+        hoverSnapPoint = null;
+        snapPoint = null;
+
+        // Find nearest snap point
+        let nearest = findNearestSnapPoint(mousePoint);
+
+        if (!startPoint) {
+            // When no start point, show hover preview
+            hoverSnapPoint = nearest;
         } else {
-            // Show hover snap indicator before starting to draw
-            hoverSnapPoint = findNearestSnapPoint(mousePoint);
+            // When drawing, show snap preview
+            snapPoint = nearest;
+            tempEndPoint = snapPoint || snapToGrid(mousePoint);
         }
         redrawAll();
     } else if (isPointMode) {
-        let mousePoint = { x: mouseX, y: mouseY };
         highlightedLine = null;
         nearestPointOnLine = null;
         let minDist = 10 * Math.sqrt(zoomLevel);
 
+        // First check lines
         for (let l of lines) {
             let d = distToSegment(mousePoint, gridToPixel(l.start), gridToPixel(l.end));
             if (d < minDist) {
@@ -494,6 +605,17 @@ function mouseMoved() {
                 minDist = d;
             }
         }
+
+        // Then check curves with increased detection range
+        for (let c of curves) {
+            let nearestPoint = getNearestPointOnCurve(mousePoint, c);
+            if (nearestPoint.distance < minDist * 1.5) {  // Increased detection range for curves
+                highlightedLine = null;  // Clear line highlight
+                nearestPointOnLine = nearestPoint.point;
+                minDist = nearestPoint.distance;
+            }
+        }
+
         updateTooltip();
         redrawAll();
         hoverSnapPoint = null;
@@ -556,10 +678,23 @@ function mousePressed() {
         return;
     }
 
+    if (mouseX >= 220 && mouseX <= 260 && mouseY >= 20 && mouseY <= 60) {
+        isCurveMode = !isCurveMode;
+        if (isCurveMode) {
+            isDrawMode = false;
+            isSelectMode = false;
+            selectedLine = null;
+            selectedPoint = null;
+        }
+        updateTooltip();
+        redrawAll();
+        return;
+    }
+
     if (isPointMode) {
         let newPoint;
-        if (highlightedLine && nearestPointOnLine) {
-            newPoint = nearestPointOnLine;
+        if (nearestPointOnLine) {  // Changed condition to just check for preview point
+            newPoint = nearestPointOnLine;  // Use the preview point position
         } else {
             newPoint = snapToGrid({ x: mouseX, y: mouseY });
         }
@@ -589,6 +724,36 @@ function mousePressed() {
     } else if (isSelectMode) {
         let mousePoint = { x: mouseX, y: mouseY };
 
+        // First check for curve control points if a curve is already selected
+        if (selectedCurve) {
+            let controlPoint = getNearestControlPoint(mousePoint, selectedCurve);
+            if (controlPoint) {
+                selectedControlPoint = controlPoint;
+                isDraggingLine = false;
+                redrawAll();
+                return;
+            }
+        }
+
+        // Then check for new curve selection
+        selectedCurve = null;
+        selectedControlPoint = null;
+        for (let c of curves) {
+            if (isNearCurve(mousePoint, c)) {
+                selectedCurve = c;
+                let controlPoint = getNearestControlPoint(mousePoint, c);
+                if (controlPoint) {
+                    selectedControlPoint = controlPoint;
+                }
+                selectedLine = null;
+                selectedPoint = null;
+                isDraggingLine = false;
+                redrawAll();
+                return;
+            }
+        }
+
+        // Then check for points and lines as before
         selectedPoint = null;
         for (let p of points) {
             let pointPx = gridToPixel(p);
@@ -627,6 +792,51 @@ function mousePressed() {
             }
         }
         redrawAll();
+    } else if (isCurveMode) {
+        if (!startPoint) {
+            let mousePoint = { x: mouseX, y: mouseY };
+            startPoint = hoverSnapPoint || snapToGrid(mousePoint);
+            hoverSnapPoint = null;
+            redrawAll();
+        } else {
+            let mousePoint = { x: mouseX, y: mouseY };
+            let endPoint = snapPoint || snapToGrid(mousePoint);
+
+            // Create control points at 1/3 and 2/3 distance between start and end
+            let dx = endPoint.x - startPoint.x;
+            let dy = endPoint.y - startPoint.y;
+            let control1 = {
+                x: startPoint.x + dx * 0.33,
+                y: startPoint.y + dy * 0.33
+            };
+            let control2 = {
+                x: startPoint.x + dx * 0.66,
+                y: startPoint.y + dy * 0.66
+            };
+
+            let newCurve = {
+                start: startPoint,
+                end: endPoint,
+                control1: control1,
+                control2: control2
+            };
+
+            // Pre-calculate and cache the length
+            calculateCurveLength(newCurve);
+            curves.push(newCurve);
+            saveState('add_curve');
+
+            // Switch to select mode and select the new curve
+            isCurveMode = false;
+            isSelectMode = true;
+            selectedCurve = newCurve;
+            selectedControlPoint = null;  // Don't select any control point initially
+
+            startPoint = null;
+            tempEndPoint = null;
+            snapPoint = null;
+            redrawAll();
+        }
     }
 
     // Check if clicking on a length label
@@ -682,6 +892,13 @@ function mouseDragged() {
 
             dragStartPoint = currentPoint;
             redrawAll();
+        } else if (selectedCurve && selectedControlPoint) {
+            let newPos = snapToGrid({ x: mouseX, y: mouseY });
+            selectedCurve[selectedControlPoint] = newPos;
+            // Invalidate the cache when curve is modified
+            curveCache.delete(JSON.stringify(selectedCurve));
+            redrawAll();
+            return;  // Add return to prevent other drag operations
         }
     }
     updateTooltip();
@@ -701,6 +918,13 @@ function mouseReleased() {
         selectedHandle = null;
         redrawAll();
     }
+    if (isSelectMode && selectedCurve) {
+        saveState('move_curve');
+        // Only deselect control point, keep curve selected
+        if (selectedControlPoint) {
+            selectedControlPoint = null;
+        }
+    }
     updateTooltip();
 }
 
@@ -711,6 +935,7 @@ function redrawAll() {
     drawSnapButton();
     drawSelectButton();
     drawPointButton();
+    drawCurveButton();
     drawZoomSlider();
 
     for (let l of lines) {
@@ -760,8 +985,8 @@ function redrawAll() {
         drawLineLength(previewLine);
     }
 
-    // Draw hover snap preview
-    if (isDrawMode && hoverSnapPoint) {
+    // Draw hover snap preview for both draw and curve modes
+    if ((isDrawMode || isCurveMode) && hoverSnapPoint) {
         let snapPx = gridToPixel(hoverSnapPoint);
         stroke(0, 0, 255);
         strokeWeight(1);
@@ -774,8 +999,8 @@ function redrawAll() {
         circle(snapPx.x, snapPx.y, size * 2);
     }
 
-    // Draw snap preview for active drawing
-    if (isDrawMode && snapPoint) {
+    // Draw snap preview for active drawing in both draw and curve modes
+    if ((isDrawMode || isCurveMode) && snapPoint) {
         let snapPx = gridToPixel(snapPoint);
         stroke(0, 0, 255);
         strokeWeight(1);
@@ -800,6 +1025,90 @@ function redrawAll() {
         strokeWeight(1 * Math.sqrt(zoomLevel));
         line(startPx.x, startPx.y, endPx.x, endPx.y);
         drawLineLength(previewLine);
+    }
+
+    // Draw curves
+    for (let c of curves) {
+        let startPx = gridToPixel(c.start);
+        let endPx = gridToPixel(c.end);
+        let control1Px = gridToPixel(c.control1);
+        let control2Px = gridToPixel(c.control2);
+
+        if (c === selectedCurve && isSelectMode) {
+            // Draw control handles first (behind the curve)
+            stroke(200, 200, 200);
+            strokeWeight(1 * Math.sqrt(zoomLevel));
+            line(startPx.x, startPx.y, control1Px.x, control1Px.y);
+            line(endPx.x, endPx.y, control2Px.x, control2Px.y);
+
+            // Draw the curve
+            stroke(0, 0, 255);
+            strokeWeight(2 * Math.sqrt(zoomLevel));
+            noFill();
+            bezier(
+                startPx.x, startPx.y,
+                control1Px.x, control1Px.y,
+                control2Px.x, control2Px.y,
+                endPx.x, endPx.y
+            );
+
+            // Draw control points
+            fill(255);
+            stroke(0, 0, 255);
+            strokeWeight(1 * Math.sqrt(zoomLevel));
+
+            // Draw endpoints and control points
+            circle(startPx.x, startPx.y, handleRadius * 2 * Math.sqrt(zoomLevel));
+            circle(endPx.x, endPx.y, handleRadius * 2 * Math.sqrt(zoomLevel));
+            circle(control1Px.x, control1Px.y, handleRadius * 2 * Math.sqrt(zoomLevel));
+            circle(control2Px.x, control2Px.y, handleRadius * 2 * Math.sqrt(zoomLevel));
+
+            // Draw the curve length
+            drawCurveLength(c);
+        } else {
+            stroke(0);
+            strokeWeight(1 * Math.sqrt(zoomLevel));
+            noFill();
+            bezier(
+                startPx.x, startPx.y,
+                control1Px.x, control1Px.y,
+                control2Px.x, control2Px.y,
+                endPx.x, endPx.y
+            );
+
+            // Draw the curve length
+            drawCurveLength(c);
+        }
+    }
+
+    // Draw curve preview
+    if (isCurveMode && startPoint && tempEndPoint) {
+        let startPx = gridToPixel(startPoint);
+        let endPx = gridToPixel(tempEndPoint);
+
+        // Create temporary control points
+        let dx = tempEndPoint.x - startPoint.x;
+        let dy = tempEndPoint.y - startPoint.y;
+        let control1 = {
+            x: startPoint.x + dx * 0.33,
+            y: startPoint.y + dy * 0.33
+        };
+        let control2 = {
+            x: startPoint.x + dx * 0.66,
+            y: startPoint.y + dy * 0.66
+        };
+        let control1Px = gridToPixel(control1);
+        let control2Px = gridToPixel(control2);
+
+        stroke(100, 100, 255, 128);
+        strokeWeight(1 * Math.sqrt(zoomLevel));
+        noFill();
+        bezier(
+            startPx.x, startPx.y,
+            control1Px.x, control1Px.y,
+            control2Px.x, control2Px.y,
+            endPx.x, endPx.y
+        );
     }
 
     // Draw tooltip bar at the bottom
@@ -978,7 +1287,154 @@ function updateTooltip() {
         } else {
             tooltipText = "Click line or point to select";
         }
+    } else if (isCurveMode) {
+        if (!startPoint) {
+            tooltipText = hoverSnapPoint ? "Click to start curve from snap point" : "Click to set start point of curve";
+        } else {
+            tooltipText = snapPoint ? "Click to end curve at snap point" : "Click to set end point of curve";
+        }
     } else {
         tooltipText = "Select a tool to start drawing";
     }
+}
+
+function isNearCurve(point, curve) {
+    let startPx = gridToPixel(curve.start);
+    let endPx = gridToPixel(curve.end);
+    let control1Px = gridToPixel(curve.control1);
+    let control2Px = gridToPixel(curve.control2);
+
+    // Check more points along the curve for better hit detection
+    for (let t = 0; t <= 1; t += 0.05) {  // Increased sampling rate
+        let px = bezierPoint(startPx.x, control1Px.x, control2Px.x, endPx.x, t);
+        let py = bezierPoint(startPx.y, control1Px.y, control2Px.y, endPx.y, t);
+        if (dist(point.x, point.y, px, py) < 10 * Math.sqrt(zoomLevel)) {  // Increased hit area
+            return true;
+        }
+    }
+    return false;
+}
+
+function getNearestControlPoint(point, curve) {
+    let points = [
+        { type: 'start', point: curve.start },
+        { type: 'end', point: curve.end },
+        { type: 'control1', point: curve.control1 },
+        { type: 'control2', point: curve.control2 }
+    ];
+
+    let nearest = null;
+    let minDist = Infinity;
+
+    for (let p of points) {
+        let pPx = gridToPixel(p.point);
+        let d = dist(point.x, point.y, pPx.x, pPx.y);
+        if (d < minDist && d < handleRadius * 2 * Math.sqrt(zoomLevel)) {  // Increased hit area for handles
+            minDist = d;
+            nearest = p.type;
+        }
+    }
+
+    return nearest;
+}
+
+function calculateCurveLength(curve) {
+    // Return cached value if exists and curve hasn't changed
+    const cacheKey = JSON.stringify(curve);
+    if (curveCache.has(cacheKey)) {
+        return curveCache.get(cacheKey);
+    }
+
+    // Calculate length by sampling points along the curve
+    let length = 0;
+    let prevX, prevY;
+    const samples = 50;
+
+    let startPx = gridToPixel(curve.start);
+    let endPx = gridToPixel(curve.end);
+    let control1Px = gridToPixel(curve.control1);
+    let control2Px = gridToPixel(curve.control2);
+
+    for (let i = 0; i <= samples; i++) {
+        const t = i / samples;
+        const x = bezierPoint(startPx.x, control1Px.x, control2Px.x, endPx.x, t);
+        const y = bezierPoint(startPx.y, control1Px.y, control2Px.y, endPx.y, t);
+
+        if (i > 0) {
+            length += dist(prevX, prevY, x, y);
+        }
+        prevX = x;
+        prevY = y;
+    }
+
+    // Convert to grid units and cache the result
+    length = length / (gridSize * zoomLevel);
+    curveCache.set(cacheKey, length.toFixed(1));
+    return length.toFixed(1);
+}
+
+function drawCurveLength(curve) {
+    let startPx = gridToPixel(curve.start);
+    let endPx = gridToPixel(curve.end);
+    let control1Px = gridToPixel(curve.control1);
+    let control2Px = gridToPixel(curve.control2);
+
+    // Find the middle point of the curve
+    let midT = 0.5;
+    let midX = bezierPoint(startPx.x, control1Px.x, control2Px.x, endPx.x, midT);
+    let midY = bezierPoint(startPx.y, control1Px.y, control2Px.y, endPx.y, midT);
+
+    let length = calculateCurveLength(curve);
+    let scaledTextSize = 12 * Math.sqrt(zoomLevel);
+    let strokeOffset = (curve === selectedCurve && isSelectMode ? 2 : 1) * Math.sqrt(zoomLevel);
+
+    // Draw the text background
+    fill(255, 255, 255, 200);
+    noStroke();
+    textAlign(CENTER, CENTER);
+    textSize(scaledTextSize);
+
+    let displayText = length + 'cm';
+    let padding = 5;
+    let textWidth = displayText.length * scaledTextSize * 0.6;
+
+    push();
+    translate(midX, midY);
+
+    // Draw background
+    rect(-textWidth / 2 - padding, -strokeOffset - scaledTextSize - padding,
+        textWidth + padding * 2, scaledTextSize + padding * 2, 5);
+
+    // Draw text
+    fill(curve === selectedCurve ? [0, 0, 255] : [0]);
+    text(displayText, 0, -strokeOffset - scaledTextSize / 2);
+    pop();
+}
+
+function getNearestPointOnCurve(point, curve) {
+    let startPx = gridToPixel(curve.start);
+    let endPx = gridToPixel(curve.end);
+    let control1Px = gridToPixel(curve.control1);
+    let control2Px = gridToPixel(curve.control2);
+
+    let minDist = Infinity;
+    let nearestPoint = null;
+
+    // Increase sampling rate for smoother detection
+    for (let t = 0; t <= 1; t += 0.01) {  // Changed from 0.05 to 0.01
+        let px = bezierPoint(startPx.x, control1Px.x, control2Px.x, endPx.x, t);
+        let py = bezierPoint(startPx.y, control1Px.y, control2Px.y, endPx.y, t);
+        let d = dist(point.x, point.y, px, py);
+
+        if (d < minDist) {
+            minDist = d;
+            nearestPoint = { x: px, y: py };  // Store pixel coordinates
+        }
+    }
+
+    // Convert to grid coordinates after finding the nearest point
+    return {
+        point: pixelToGrid(nearestPoint),
+        distance: minDist
+    };
 } 
