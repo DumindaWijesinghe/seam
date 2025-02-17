@@ -46,6 +46,13 @@ let hoverSnapPoint = null;
 // Add to the top with other state variables
 let curveCache = new Map(); // Cache for curve lengths
 
+// Add at the top with other state variables
+let showObjectTree = true;
+let objectTreeWidth = 200;
+let isResizingTree = false;
+let treeMinWidth = 150;
+let treeMaxWidth = 400;
+
 function saveState(action) {
     redoStack = [];
     undoStack.push({
@@ -646,9 +653,21 @@ function mouseMoved() {
         redrawAll();
         hoverSnapPoint = null;
     }
+
+    // Check if mouse is over tree resize handle
+    if (abs(mouseX - (width - objectTreeWidth)) < 5) {
+        cursor('ew-resize');
+    } else {
+        cursor(ARROW);
+    }
 }
 
 function mousePressed() {
+    if (abs(mouseX - (width - objectTreeWidth)) < 5) {
+        isResizingTree = true;
+        return;
+    }
+
     if (isOverZoomSlider(mouseX, mouseY)) {
         isZoomSliderDragging = true;
         let sliderX = width - 120;
@@ -871,9 +890,76 @@ function mousePressed() {
             return;
         }
     }
+
+    // Object tree click handling
+    if (mouseX > width - objectTreeWidth && mouseY > 30) {
+        let y = 40;
+        let indent = 20;
+        let itemHeight = 20;
+
+        // Points section
+        y += 20; // Skip header
+        for (let i = 0; i < points.length; i++) {
+            if (mouseY >= y && mouseY < y + itemHeight) {
+                isSelectMode = true;
+                isDrawMode = false;
+                isPointMode = false;
+                isCurveMode = false;
+                selectedPoint = points[i];
+                selectedLine = null;
+                selectedCurve = null;
+                selectedControlPoint = null;
+                redrawAll();
+                return;
+            }
+            y += itemHeight;
+        }
+
+        // Lines section
+        y += 30; // Space for section header
+        for (let i = 0; i < lines.length; i++) {
+            if (mouseY >= y && mouseY < y + itemHeight) {
+                isSelectMode = true;
+                isDrawMode = false;
+                isPointMode = false;
+                isCurveMode = false;
+                selectedLine = lines[i];
+                selectedPoint = null;
+                selectedCurve = null;
+                selectedControlPoint = null;
+                redrawAll();
+                return;
+            }
+            y += itemHeight;
+        }
+
+        // Curves section
+        y += 30; // Space for section header
+        for (let i = 0; i < curves.length; i++) {
+            if (mouseY >= y && mouseY < y + itemHeight) {
+                isSelectMode = true;
+                isDrawMode = false;
+                isPointMode = false;
+                isCurveMode = false;
+                selectedCurve = curves[i];
+                selectedPoint = null;
+                selectedLine = null;
+                selectedControlPoint = null;
+                redrawAll();
+                return;
+            }
+            y += itemHeight;
+        }
+    }
 }
 
 function mouseDragged() {
+    if (isResizingTree) {
+        objectTreeWidth = constrain(width - mouseX, treeMinWidth, treeMaxWidth);
+        redrawAll();
+        return;
+    }
+
     if (isZoomSliderDragging) {
         let sliderX = width - 120;
         let sliderWidth = 100;
@@ -933,6 +1019,7 @@ function mouseDragged() {
 
 function mouseReleased() {
     isZoomSliderDragging = false;
+    isResizingTree = false;
 
     if (isSelectMode && (selectedPoint || (selectedLine && (selectedHandle || isDraggingLine)))) {
         saveState('move');
@@ -1157,6 +1244,9 @@ function redrawAll() {
 
     // Reset font for other text
     textFont('sans-serif');
+
+    // Draw object tree last so it's on top
+    drawObjectTree();
 }
 
 function distToSegment(p, v, w) {
@@ -1463,4 +1553,96 @@ function getNearestPointOnCurve(point, curve) {
         point: pixelToGrid(nearestPoint),
         distance: minDist
     };
+}
+
+function drawObjectTree() {
+    if (!showObjectTree) return;
+
+    // Track hover state
+    let hoverY = mouseY;
+    let hoverX = mouseX;
+    let isHovering = mouseX > width - objectTreeWidth;
+
+    // Draw panel background
+    fill(240);
+    stroke(200);
+    strokeWeight(1);
+    rect(width - objectTreeWidth, 0, objectTreeWidth, height);
+
+    // Draw resize handle
+    stroke(180);
+    line(width - objectTreeWidth, 0, width - objectTreeWidth, height);
+
+    // Draw header
+    fill(220);
+    noStroke();
+    rect(width - objectTreeWidth, 0, objectTreeWidth, 30);
+
+    // Draw header text
+    fill(80);
+    textAlign(LEFT, CENTER);
+    textSize(14);
+    text("Object Tree", width - objectTreeWidth + 10, 15);
+
+    // Start content area
+    let y = 40;
+    let indent = 20;
+    let itemHeight = 20;
+    textSize(12);
+
+    // Draw Points section
+    fill(80);
+    text("Points (" + points.length + ")", width - objectTreeWidth + 10, y);
+    y += 20;
+    for (let i = 0; i < points.length; i++) {
+        let p = points[i];
+        // Check hover state
+        if (isHovering && hoverY >= y && hoverY < y + itemHeight) {
+            fill(220);
+            noStroke();
+            rect(width - objectTreeWidth, y, objectTreeWidth, itemHeight);
+        }
+        fill(p === selectedPoint ? [0, 0, 255] : [80]);
+        text(`Point ${i + 1} (${p.x.toFixed(1)}, ${p.y.toFixed(1)})`,
+            width - objectTreeWidth + indent, y + itemHeight / 2);
+        y += itemHeight;
+    }
+
+    // Draw Lines section
+    y += 10;
+    fill(80);
+    text("Lines (" + lines.length + ")", width - objectTreeWidth + 10, y);
+    y += 20;
+    for (let i = 0; i < lines.length; i++) {
+        let l = lines[i];
+        // Check hover state
+        if (isHovering && hoverY >= y && hoverY < y + itemHeight) {
+            fill(220);
+            noStroke();
+            rect(width - objectTreeWidth, y, objectTreeWidth, itemHeight);
+        }
+        fill(l === selectedLine ? [0, 0, 255] : [80]);
+        text(`Line ${i + 1} (${calculateLength(l.start, l.end)}cm)`,
+            width - objectTreeWidth + indent, y + itemHeight / 2);
+        y += itemHeight;
+    }
+
+    // Draw Curves section
+    y += 10;
+    fill(80);
+    text("Curves (" + curves.length + ")", width - objectTreeWidth + 10, y);
+    y += 20;
+    for (let i = 0; i < curves.length; i++) {
+        let c = curves[i];
+        // Check hover state
+        if (isHovering && hoverY >= y && hoverY < y + itemHeight) {
+            fill(220);
+            noStroke();
+            rect(width - objectTreeWidth, y, objectTreeWidth, itemHeight);
+        }
+        fill(c === selectedCurve ? [0, 0, 255] : [80]);
+        text(`Curve ${i + 1} (${calculateCurveLength(c)}cm)`,
+            width - objectTreeWidth + indent, y + itemHeight / 2);
+        y += itemHeight;
+    }
 } 
