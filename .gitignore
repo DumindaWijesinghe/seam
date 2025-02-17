@@ -12,6 +12,7 @@ yarn.lock
 dist/
 build/
 .next/
+.firebase/
 
 # Logs
 logs
