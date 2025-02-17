@@ -1,5 +1,7 @@
 # Seam - Parametric Pattern Drafting Application
 
+![Seam Logo](./seam-logo.png)
+
 A web-based tool for creating and manipulating sewing patterns with parametric controls. Built with p5.js, this application aims to revolutionize pattern drafting by providing a digital, precise, and interactive environment.
 
 ## Screenshots
