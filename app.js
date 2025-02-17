@@ -59,6 +59,9 @@ let showLabels = true;
 // Add at the top with other state variables
 let buttonTooltip = '';
 
+// Add at the top with other state variables
+let isShiftPressed = false;
+
 function saveState(action) {
     redoStack = [];
     undoStack.push({
@@ -100,6 +103,13 @@ function redo() {
 }
 
 function keyPressed() {
+    if (keyCode === SHIFT) {
+        isShiftPressed = true;
+        if (isDrawMode && startPoint && tempEndPoint) {
+            redrawAll();
+        }
+        return false;
+    }
     if (keyIsDown(CONTROL) && keyCode === 90) {
         if (keyIsDown(SHIFT)) {
             redo();
@@ -165,6 +175,16 @@ function keyPressed() {
     }
 }
 
+function keyReleased() {
+    if (keyCode === SHIFT) {
+        isShiftPressed = false;
+        if (isDrawMode && startPoint && tempEndPoint) {
+            redrawAll();
+        }
+        return false;
+    }
+}
+
 function setup() {
     createCanvas(windowWidth, windowHeight);
     background(220);
@@ -174,6 +194,10 @@ function setup() {
 
     // Load JetBrains Mono font
     textFont('JetBrains Mono');
+
+    drawCmGrid(gridSize * zoomLevel);
+    noFill();
+    stroke(0);
 
     drawLineButton();
     drawSnapButton();
@@ -675,7 +699,11 @@ function mouseMoved() {
         } else {
             // When drawing, show snap preview
             snapPoint = nearest;
-            tempEndPoint = snapPoint || snapToGrid(mousePoint);
+            let endPoint = snapPoint || snapToGrid(mousePoint);
+            if (isDrawMode) {
+                endPoint = snapToHorizontalOrVertical(startPoint, endPoint);
+            }
+            tempEndPoint = endPoint;
         }
         redrawAll();
     } else if (isPointMode) {
@@ -843,6 +871,7 @@ function mousePressed() {
             let mousePoint = { x: mouseX, y: mouseY };
             snapPoint = findNearestSnapPoint(mousePoint);
             let endPoint = snapPoint || snapToGrid(mousePoint);
+            endPoint = snapToHorizontalOrVertical(startPoint, endPoint);
 
             lines.push({
                 start: startPoint,
@@ -1734,5 +1763,20 @@ function drawObjectTree() {
         text(`Curve ${i + 1} (${calculateCurveLength(c)}cm)`,
             width - objectTreeWidth + indent, y + itemHeight / 2);
         y += itemHeight;
+    }
+}
+
+function snapToHorizontalOrVertical(start, end) {
+    if (!isShiftPressed) return end;
+
+    let dx = Math.abs(end.x - start.x);
+    let dy = Math.abs(end.y - start.y);
+
+    // If horizontal distance is greater, make it perfectly horizontal
+    if (dx > dy) {
+        return { x: end.x, y: start.y };
+    } else {
+        // Otherwise make it perfectly vertical
+        return { x: start.x, y: end.y };
     }
 } 
