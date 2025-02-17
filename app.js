@@ -176,7 +176,11 @@ function setup() {
     drawCurveButton();
     drawZoomSlider();
 
+    // Initialize tooltip
     updateTooltip();
+
+    // Initial redraw to show all UI elements
+    redrawAll();
 }
 
 function drawCmGrid(scale) {
@@ -253,13 +257,44 @@ function drawPointButton() {
 }
 
 function drawCurveButton() {
+    // Draw button background
     fill(isCurveMode ? 150 : 200);
     stroke(0);
     rect(220, 20, 40, 40);
+
+    // Draw curve icon
+    stroke(0);
+    strokeWeight(2);
+    noFill();
+
+    // Draw a sample Bézier curve
+    let startX = 225;
+    let startY = 50;
+    let endX = 255;
+    let endY = 30;
+    let control1X = 225;
+    let control1Y = 25;
+    let control2X = 255;
+    let control2Y = 55;
+
+    bezier(
+        startX, startY,      // Start point
+        control1X, control1Y, // First control point
+        control2X, control2Y, // Second control point
+        endX, endY          // End point
+    );
+
+    // Draw small dots at the endpoints
+    fill(0);
+    noStroke();
+    circle(startX, startY, 4);
+    circle(endX, endY, 4);
+
+    strokeWeight(1);
 }
 
 function drawZoomSlider() {
-    let sliderX = width - 120;
+    let sliderX = width - objectTreeWidth - 120;
     let sliderY = height - 40;
     let sliderWidth = 100;
 
@@ -286,7 +321,7 @@ function updateZoom() {
 }
 
 function isOverZoomSlider(mx, my) {
-    let sliderX = width - 120;
+    let sliderX = width - objectTreeWidth - 120;
     let sliderY = height - 40;
     return (mx >= sliderX - 8 && mx <= sliderX + 108 &&
         my >= sliderY - 8 && my <= sliderY + 8);
@@ -670,7 +705,7 @@ function mousePressed() {
 
     if (isOverZoomSlider(mouseX, mouseY)) {
         isZoomSliderDragging = true;
-        let sliderX = width - 120;
+        let sliderX = width - objectTreeWidth - 120;
         let sliderWidth = 100;
         zoomSliderPos = constrain((mouseX - sliderX) / sliderWidth, 0, 1);
         updateZoom();
@@ -961,7 +996,7 @@ function mouseDragged() {
     }
 
     if (isZoomSliderDragging) {
-        let sliderX = width - 120;
+        let sliderX = width - objectTreeWidth - 120;
         let sliderWidth = 100;
         zoomSliderPos = constrain((mouseX - sliderX) / sliderWidth, 0, 1);
         updateZoom();
