@@ -4,6 +4,10 @@
 
 A web-based tool for creating and manipulating sewing patterns with parametric controls. Built with p5.js, this application aims to revolutionize pattern drafting by providing a digital, precise, and interactive environment.
 
+## Live Demo
+
+Try out Seam at [https://draw-seam.web.app](https://draw-seam.web.app)
+
 ## Screenshots
 
 ![Seam Pattern Drafting Interface](https://github.com/DumindaWijesinghe/seam/blob/master/sreenshots/main-interface.jpg?raw=true)
