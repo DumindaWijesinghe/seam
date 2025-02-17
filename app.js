@@ -617,6 +617,45 @@ function getPointOnLine(mousePoint, line) {
     };
 }
 
+// Add this function before findNearestSnapPoint
+function findCircleIntersections() {
+    let intersections = [];
+
+    // Check intersections between circles
+    for (let i = 0; i < circles.length; i++) {
+        for (let j = i + 1; j < circles.length; j++) {
+            let c1 = circles[i];
+            let c2 = circles[j];
+
+            // Calculate distance between centers
+            let dx = c2.center.x - c1.center.x;
+            let dy = c2.center.y - c1.center.y;
+            let d = Math.sqrt(dx * dx + dy * dy);
+
+            // Check if circles intersect
+            if (d <= c1.radius + c2.radius && d >= Math.abs(c1.radius - c2.radius)) {
+                // Calculate intersection points
+                let a = (c1.radius * c1.radius - c2.radius * c2.radius + d * d) / (2 * d);
+                let h = Math.sqrt(c1.radius * c1.radius - a * a);
+
+                let x2 = c1.center.x + (dx * a) / d;
+                let y2 = c1.center.y + (dy * a) / d;
+
+                let x3 = x2 + (h * dy) / d;
+                let y3 = y2 - (h * dx) / d;
+
+                let x4 = x2 - (h * dy) / d;
+                let y4 = y2 + (h * dx) / d;
+
+                intersections.push({ x: x3, y: y3 });
+                intersections.push({ x: x4, y: y4 });
+            }
+        }
+    }
+
+    return intersections;
+}
+
 function findNearestSnapPoint(mousePoint) {
     if (!isSnapMode) return null;
 
@@ -667,6 +706,18 @@ function findNearestSnapPoint(mousePoint) {
         if (distToPoint < minDist) {
             minDist = distToPoint;
             nearest = point;
+        }
+    }
+
+    // Check circle intersections
+    let intersections = findCircleIntersections();
+    for (let intersection of intersections) {
+        let intersectionPx = gridToPixel(intersection);
+        let distToIntersection = dist(mousePoint.x, mousePoint.y, intersectionPx.x, intersectionPx.y);
+
+        if (distToIntersection < minDist) {
+            minDist = distToIntersection;
+            nearest = intersection;
         }
     }
 
@@ -741,23 +792,40 @@ function mouseMoved() {
         nearestPointOnLine = null;
         let minDist = 10 * Math.sqrt(zoomLevel);
 
-        // First check lines
-        for (let l of lines) {
-            let d = distToSegment(mousePoint, gridToPixel(l.start), gridToPixel(l.end));
+        // First check for circle intersections
+        let intersections = findCircleIntersections();
+        for (let intersection of intersections) {
+            let intersectionPx = gridToPixel(intersection);
+            let d = dist(mousePoint.x, mousePoint.y, intersectionPx.x, intersectionPx.y);
             if (d < minDist) {
-                highlightedLine = l;
-                nearestPointOnLine = pixelToGrid(getPointOnLine(mousePoint, l));
+                nearestPointOnLine = intersection;
                 minDist = d;
+                highlightedLine = null;
+                break;
             }
         }
 
-        // Then check curves with increased detection range
-        for (let c of curves) {
-            let nearestPoint = getNearestPointOnCurve(mousePoint, c);
-            if (nearestPoint.distance < minDist * 1.5) {  // Increased detection range for curves
-                highlightedLine = null;  // Clear line highlight
-                nearestPointOnLine = nearestPoint.point;
-                minDist = nearestPoint.distance;
+        // If no intersection found, check lines
+        if (!nearestPointOnLine) {
+            for (let l of lines) {
+                let d = distToSegment(mousePoint, gridToPixel(l.start), gridToPixel(l.end));
+                if (d < minDist) {
+                    highlightedLine = l;
+                    nearestPointOnLine = pixelToGrid(getPointOnLine(mousePoint, l));
+                    minDist = d;
+                }
+            }
+        }
+
+        // If still no point found, check curves
+        if (!nearestPointOnLine) {
+            for (let c of curves) {
+                let nearestPoint = getNearestPointOnCurve(mousePoint, c);
+                if (nearestPoint.distance < minDist * 1.5) {  // Increased detection range for curves
+                    highlightedLine = null;  // Clear line highlight
+                    nearestPointOnLine = nearestPoint.point;
+                    minDist = nearestPoint.distance;
+                }
             }
         }
 
@@ -1758,8 +1826,19 @@ function updateTooltip() {
     } else if (isPointMode) {
         if (highlightedLine) {
             tooltipText = "Click to place point on line";
+        } else if (nearestPointOnLine && !highlightedLine) {
+            let intersections = findCircleIntersections();
+            let isIntersection = intersections.some(i =>
+                Math.abs(i.x - nearestPointOnLine.x) < 0.01 &&
+                Math.abs(i.y - nearestPointOnLine.y) < 0.01
+            );
+            if (isIntersection) {
+                tooltipText = "Click to place point at circle intersection";
+            } else {
+                tooltipText = "Click to place point on curve";
+            }
         } else {
-            tooltipText = "Click to place point, hover over line to snap";
+            tooltipText = "Click to place point, hover over line or circle intersection to snap";
         }
     } else if (isSelectMode) {
         if (selectedLine) {
