@@ -62,13 +62,21 @@ let buttonTooltip = '';
 // Add at the top with other state variables
 let isShiftPressed = false;
 
+// Add circle tool state
+let isCircleMode = false;
+let circles = [];  // Store circles: {center, radius}
+let selectedCircle = null;
+let circleCenter = null;
+let tempRadius = null;
+
 function saveState(action) {
     redoStack = [];
     undoStack.push({
         action: action,
         lines: JSON.parse(JSON.stringify(lines)),
         points: JSON.parse(JSON.stringify(points)),
-        curves: JSON.parse(JSON.stringify(curves))
+        curves: JSON.parse(JSON.stringify(curves)),
+        circles: JSON.parse(JSON.stringify(circles))
     });
 }
 
@@ -77,12 +85,14 @@ function undo() {
         redoStack.push({
             lines: JSON.parse(JSON.stringify(lines)),
             points: JSON.parse(JSON.stringify(points)),
-            curves: JSON.parse(JSON.stringify(curves))
+            curves: JSON.parse(JSON.stringify(curves)),
+            circles: JSON.parse(JSON.stringify(circles))
         });
         let prevState = undoStack.pop();
         lines = prevState.lines;
         points = prevState.points;
         curves = prevState.curves;
+        circles = prevState.circles;
         redrawAll();
     }
 }
@@ -92,12 +102,14 @@ function redo() {
         undoStack.push({
             lines: JSON.parse(JSON.stringify(lines)),
             points: JSON.parse(JSON.stringify(points)),
-            curves: JSON.parse(JSON.stringify(curves))
+            curves: JSON.parse(JSON.stringify(curves)),
+            circles: JSON.parse(JSON.stringify(circles))
         });
         let nextState = redoStack.pop();
         lines = nextState.lines;
         points = nextState.points;
         curves = nextState.curves;
+        circles = nextState.circles;
         redrawAll();
     }
 }
@@ -204,6 +216,7 @@ function setup() {
     drawSelectButton();
     drawPointButton();
     drawCurveButton();
+    drawCircleButton();
     drawLabelsButton();
     drawZoomSlider();
 
@@ -293,10 +306,23 @@ function drawCurveButton() {
     rect(320, 20, 40, 40);
 }
 
+function drawCircleButton() {
+    fill(isCircleMode ? 150 : 200);
+    stroke(0);
+    rect(370, 20, 40, 40);
+
+    // Draw circle icon
+    stroke(0);
+    noFill();
+    strokeWeight(2);
+    circle(370 + 20, 20 + 20, 24); // Center the circle in the button with diameter 24
+    strokeWeight(1);
+}
+
 function drawLabelsButton() {
     fill(showLabels ? 150 : 200);
     stroke(0);
-    rect(370, 20, 40, 40);
+    rect(420, 20, 40, 40);
 }
 
 function drawZoomSlider() {
@@ -652,27 +678,31 @@ function mouseMoved() {
 
     // Check button tooltips first
     if (mouseY >= 20 && mouseY <= 60) {
-        if (mouseX >= 20 && mouseX <= 60) {
+        if (mouseX >= 120 && mouseX <= 160) {
             buttonTooltip = "Line Tool (Click to draw lines)";
             redrawAll();
             return;
-        } else if (mouseX >= 70 && mouseX <= 110) {
+        } else if (mouseX >= 170 && mouseX <= 210) {
             buttonTooltip = "Snap Mode (Toggle grid and point snapping)";
             redrawAll();
             return;
-        } else if (mouseX >= 120 && mouseX <= 160) {
+        } else if (mouseX >= 220 && mouseX <= 260) {
             buttonTooltip = "Select Tool (Edit and move objects)";
             redrawAll();
             return;
-        } else if (mouseX >= 170 && mouseX <= 210) {
+        } else if (mouseX >= 270 && mouseX <= 310) {
             buttonTooltip = "Point Tool (Place points on lines or canvas)";
             redrawAll();
             return;
-        } else if (mouseX >= 220 && mouseX <= 260) {
+        } else if (mouseX >= 320 && mouseX <= 360) {
             buttonTooltip = "Curve Tool (Draw Bézier curves)";
             redrawAll();
             return;
-        } else if (mouseX >= 270 && mouseX <= 310) {
+        } else if (mouseX >= 370 && mouseX <= 410) {
+            buttonTooltip = "Circle Tool (Draw circles with radius)";
+            redrawAll();
+            return;
+        } else if (mouseX >= 420 && mouseX <= 460) {
             buttonTooltip = "Labels (Toggle measurements display)";
             redrawAll();
             return;
@@ -734,6 +764,33 @@ function mouseMoved() {
         updateTooltip();
         redrawAll();
         hoverSnapPoint = null;
+    } else if (isCircleMode && circleCenter) {
+        // Clear previous states
+        hoverSnapPoint = null;
+        snapPoint = null;
+
+        // Find nearest snap point for radius
+        let nearest = findNearestSnapPoint(mousePoint);
+        snapPoint = nearest;
+
+        // Calculate preview radius when center is set
+        let endPoint = snapPoint || snapToGrid(mousePoint);
+
+        // Calculate radius in grid units
+        let dx = endPoint.x - circleCenter.x;
+        let dy = endPoint.y - circleCenter.y;
+        tempRadius = Math.sqrt(dx * dx + dy * dy);
+
+        redrawAll();
+    } else if (isCircleMode && !circleCenter) {
+        // Clear previous states
+        hoverSnapPoint = null;
+        snapPoint = null;
+
+        // Find nearest snap point for circle center
+        let nearest = findNearestSnapPoint(mousePoint);
+        hoverSnapPoint = nearest;
+        redrawAll();
     }
 
     // Check if mouse is over tree resize handle
@@ -766,9 +823,13 @@ function mousePressed() {
             isDrawMode = false;
             isSelectMode = false;
             isCurveMode = false;
+            isCircleMode = false;
             selectedLine = null;
             selectedPoint = null;
             selectedCurve = null;
+            selectedCircle = null;
+            circleCenter = null;
+            tempRadius = null;
             isPointMode = true;
         } else {
             isPointMode = false;
@@ -785,9 +846,13 @@ function mousePressed() {
             isSelectMode = false;
             isPointMode = false;
             isCurveMode = false;
+            isCircleMode = false;
             selectedLine = null;
             selectedPoint = null;
             selectedCurve = null;
+            selectedCircle = null;
+            circleCenter = null;
+            tempRadius = null;
             isDrawMode = true;
         } else {
             isDrawMode = false;
@@ -813,8 +878,11 @@ function mousePressed() {
             isDrawMode = false;
             isPointMode = false;
             isCurveMode = false;
+            isCircleMode = false;
             startPoint = null;
             tempEndPoint = null;
+            circleCenter = null;
+            tempRadius = null;
             isSelectMode = true;
         } else {
             isSelectMode = false;
@@ -831,9 +899,13 @@ function mousePressed() {
             isDrawMode = false;
             isSelectMode = false;
             isPointMode = false;
+            isCircleMode = false;
             selectedLine = null;
             selectedPoint = null;
             selectedCurve = null;
+            selectedCircle = null;
+            circleCenter = null;
+            tempRadius = null;
             isCurveMode = true;
         } else {
             isCurveMode = false;
@@ -845,8 +917,31 @@ function mousePressed() {
         return;
     }
 
-    // Labels Tool (370, 20, 40, 40)
+    // Circle Tool (370, 20, 40, 40)
     if (mouseX >= 370 && mouseX <= 410 && mouseY >= 20 && mouseY <= 60) {
+        if (!isCircleMode) {
+            // Disable all other tools
+            isDrawMode = false;
+            isSelectMode = false;
+            isPointMode = false;
+            isCurveMode = false;
+            selectedLine = null;
+            selectedPoint = null;
+            selectedCurve = null;
+            isCircleMode = true;
+        } else {
+            isCircleMode = false;
+            selectedCircle = null;
+            circleCenter = null;
+            tempRadius = null;
+        }
+        updateTooltip();
+        redrawAll();
+        return;
+    }
+
+    // Labels Tool (420, 20, 40, 40)
+    if (mouseX >= 420 && mouseX <= 460 && mouseY >= 20 && mouseY <= 60) {
         showLabels = !showLabels;
         redrawAll();
         return;
@@ -953,6 +1048,25 @@ function mousePressed() {
                 break;
             }
         }
+
+        // Check for circle selection
+        selectedCircle = null;
+        for (let c of circles) {
+            let centerPx = gridToPixel(c.center);
+            let radiusPx = c.radius * gridSize * zoomLevel;
+            let d = dist(mousePoint.x, mousePoint.y, centerPx.x, centerPx.y);
+            // Only select if clicking near the circumference (within 5 pixels)
+            if (Math.abs(d - radiusPx) < 5 * Math.sqrt(zoomLevel)) {
+                selectedCircle = c;
+                selectedLine = null;
+                selectedPoint = null;
+                selectedCurve = null;
+                isDraggingLine = false;
+                redrawAll();
+                return;
+            }
+        }
+
         redrawAll();
     } else if (isCurveMode) {
         if (!startPoint) {
@@ -1068,6 +1182,34 @@ function mousePressed() {
             y += itemHeight;
         }
     }
+
+    // Add to mousePressed after tool selection
+    if (isCircleMode) {
+        if (!circleCenter) {
+            let mousePoint = { x: mouseX, y: mouseY };
+            circleCenter = hoverSnapPoint || snapToGrid(mousePoint);
+            hoverSnapPoint = null;
+            redrawAll();
+        } else {
+            let mousePoint = { x: mouseX, y: mouseY };
+            let endPoint = snapPoint || snapToGrid(mousePoint);
+
+            // Calculate radius in grid units
+            let dx = endPoint.x - circleCenter.x;
+            let dy = endPoint.y - circleCenter.y;
+            let radius = Math.sqrt(dx * dx + dy * dy);
+
+            circles.push({
+                center: circleCenter,
+                radius: radius
+            });
+            saveState('add_circle');
+            circleCenter = null;
+            tempRadius = null;
+            snapPoint = null;
+            redrawAll();
+        }
+    }
 }
 
 function mouseDragged() {
@@ -1128,6 +1270,10 @@ function mouseDragged() {
             curveCache.delete(JSON.stringify(selectedCurve));
             redrawAll();
             return;  // Add return to prevent other drag operations
+        } else if (selectedCircle) {
+            let newPos = snapToGrid({ x: mouseX, y: mouseY });
+            selectedCircle.center = newPos;
+            redrawAll();
         }
     }
     updateTooltip();
@@ -1155,6 +1301,9 @@ function mouseReleased() {
             selectedControlPoint = null;
         }
     }
+    if (isSelectMode && selectedCircle) {
+        saveState('move_circle');
+    }
     updateTooltip();
 }
 
@@ -1166,6 +1315,7 @@ function redrawAll() {
     drawSelectButton();
     drawPointButton();
     drawCurveButton();
+    drawCircleButton();
     drawLabelsButton();
     drawZoomSlider();
 
@@ -1217,7 +1367,7 @@ function redrawAll() {
     }
 
     // Draw hover snap preview for both draw and curve modes
-    if ((isDrawMode || isCurveMode) && hoverSnapPoint) {
+    if ((isDrawMode || isCurveMode || isCircleMode) && hoverSnapPoint) {
         let snapPx = gridToPixel(hoverSnapPoint);
         stroke(0, 0, 255);
         strokeWeight(1);
@@ -1231,7 +1381,7 @@ function redrawAll() {
     }
 
     // Draw snap preview for active drawing in both draw and curve modes
-    if ((isDrawMode || isCurveMode) && snapPoint) {
+    if ((isDrawMode || isCurveMode || isCircleMode) && snapPoint) {
         let snapPx = gridToPixel(snapPoint);
         stroke(0, 0, 255);
         strokeWeight(1);
@@ -1340,6 +1490,110 @@ function redrawAll() {
             control2Px.x, control2Px.y,
             endPx.x, endPx.y
         );
+    }
+
+    // Draw circles
+    for (let c of circles) {
+        let centerPx = gridToPixel(c.center);
+        let radiusPx = c.radius * gridSize * zoomLevel;
+
+        if (c === selectedCircle && isSelectMode) {
+            stroke(0, 0, 255);
+            strokeWeight(2 * Math.sqrt(zoomLevel));
+        } else {
+            stroke(0);
+            strokeWeight(1 * Math.sqrt(zoomLevel));
+        }
+
+        noFill();
+        circle(centerPx.x, centerPx.y, radiusPx * 2);
+
+        // Draw dotted radius line
+        push();
+        if (c === selectedCircle && isSelectMode) {
+            stroke(0, 0, 255);
+        } else {
+            stroke(0);
+        }
+        strokeWeight(1 * Math.sqrt(zoomLevel));
+        drawingContext.setLineDash([5, 5]); // Create dotted line
+        let endPoint = { x: c.center.x, y: c.center.y - c.radius }; // Fixed vertical radius line
+        let endPointPx = gridToPixel(endPoint);
+        line(centerPx.x, centerPx.y, endPointPx.x, endPointPx.y);
+        drawingContext.setLineDash([]); // Reset to solid line
+        pop();
+
+        if (showLabels) {
+            // Draw radius measurement
+            let scaledTextSize = 12 * Math.sqrt(zoomLevel);
+            push();
+            let endPoint = { x: c.center.x, y: c.center.y - c.radius }; // Fixed vertical radius line
+            let endPointPx = gridToPixel(endPoint);
+            translate((centerPx.x + endPointPx.x) / 2, (centerPx.y + endPointPx.y) / 2);
+
+            // Draw background
+            fill(255, 255, 255, 200);
+            noStroke();
+            let displayText = c.radius.toFixed(1) + 'cm';
+            let textWidth = displayText.length * scaledTextSize * 0.6;
+            let padding = 5;
+            rect(-textWidth / 2 - padding, -scaledTextSize - padding,
+                textWidth + padding * 2, scaledTextSize + padding * 2, 5);
+
+            // Draw text
+            fill(c === selectedCircle ? [0, 0, 255] : [0]);
+            textAlign(CENTER, CENTER);
+            textSize(scaledTextSize);
+            text(displayText, 0, -scaledTextSize / 2);
+            pop();
+        }
+    }
+
+    // Draw circle preview
+    if (isCircleMode && circleCenter && tempRadius !== null) {
+        let centerPx = gridToPixel(circleCenter);
+        let radiusPx = tempRadius * gridSize * zoomLevel;
+
+        stroke(100, 100, 255, 128);
+        strokeWeight(1 * Math.sqrt(zoomLevel));
+        noFill();
+        circle(centerPx.x, centerPx.y, radiusPx * 2);
+
+        // Draw dotted radius line for preview
+        push();
+        stroke(100, 100, 255, 128);
+        strokeWeight(1 * Math.sqrt(zoomLevel));
+        drawingContext.setLineDash([5, 5]); // Create dotted line
+        let mousePoint = snapPoint || snapToGrid({ x: mouseX, y: mouseY });
+        let endPointPx = gridToPixel(mousePoint);
+        line(centerPx.x, centerPx.y, endPointPx.x, endPointPx.y);
+        drawingContext.setLineDash([]); // Reset to solid line
+        pop();
+
+        if (showLabels) {
+            // Draw preview radius measurement
+            let scaledTextSize = 12 * Math.sqrt(zoomLevel);
+            push();
+            let mousePoint = snapPoint || snapToGrid({ x: mouseX, y: mouseY });
+            let endPointPx = gridToPixel(mousePoint);
+            translate((centerPx.x + endPointPx.x) / 2, (centerPx.y + endPointPx.y) / 2);
+
+            // Draw background
+            fill(255, 255, 255, 200);
+            noStroke();
+            let displayText = tempRadius.toFixed(1) + 'cm';
+            let textWidth = displayText.length * scaledTextSize * 0.6;
+            let padding = 5;
+            rect(-textWidth / 2 - padding, -scaledTextSize - padding,
+                textWidth + padding * 2, scaledTextSize + padding * 2, 5);
+
+            // Draw text
+            fill(100, 100, 255);
+            textAlign(CENTER, CENTER);
+            textSize(scaledTextSize);
+            text(displayText, 0, -scaledTextSize / 2);
+            pop();
+        }
     }
 
     // Draw tooltip bar at the bottom
@@ -1518,14 +1772,22 @@ function updateTooltip() {
             }
         } else if (selectedPoint) {
             tooltipText = "Drag to move point, click elsewhere to deselect";
+        } else if (selectedCircle) {
+            tooltipText = "Click and drag to move circle, click elsewhere to deselect";
         } else {
-            tooltipText = "Click line or point to select";
+            tooltipText = "Click line, point, or circle to select";
         }
     } else if (isCurveMode) {
         if (!startPoint) {
             tooltipText = hoverSnapPoint ? "Click to start curve from snap point" : "Click to set start point of curve";
         } else {
             tooltipText = snapPoint ? "Click to end curve at snap point" : "Click to set end point of curve";
+        }
+    } else if (isCircleMode) {
+        if (!circleCenter) {
+            tooltipText = hoverSnapPoint ? "Click to place circle center at snap point" : "Click to place circle center";
+        } else {
+            tooltipText = snapPoint ? "Click to set circle radius at snap point" : "Click to set circle radius";
         }
     } else {
         tooltipText = "Select a tool to start drawing";
