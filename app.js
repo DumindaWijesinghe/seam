@@ -242,38 +242,37 @@ function drawFrontBodice(x, y, frontBodiceLength, bust, waist) {
 function drawLineButton() {
     fill(isDrawMode ? 150 : 200);
     stroke(0);
-    rect(20, 20, 40, 40);
+    rect(120, 20, 40, 40);
 }
 
 function drawSnapButton() {
     fill(isSnapMode ? 150 : 200);
     stroke(0);
-    rect(70, 20, 40, 40);
+    rect(170, 20, 40, 40);
 }
 
 function drawSelectButton() {
     fill(isSelectMode ? 150 : 200);
     stroke(0);
-    rect(120, 20, 40, 40);
+    rect(220, 20, 40, 40);
 }
 
 function drawPointButton() {
     fill(isPointMode ? 150 : 200);
     stroke(0);
-    rect(170, 20, 40, 40);
+    rect(270, 20, 40, 40);
 }
 
 function drawCurveButton() {
-    // Draw button background
     fill(isCurveMode ? 150 : 200);
     stroke(0);
-    rect(220, 20, 40, 40);
+    rect(320, 20, 40, 40);
 }
 
 function drawLabelsButton() {
     fill(showLabels ? 150 : 200);
     stroke(0);
-    rect(270, 20, 40, 40);
+    rect(370, 20, 40, 40);
 }
 
 function drawZoomSlider() {
@@ -732,27 +731,38 @@ function mousePressed() {
         return;
     }
 
-    if (mouseX >= 170 && mouseX <= 210 && mouseY >= 20 && mouseY <= 60) {
-        isPointMode = !isPointMode;
-        if (isPointMode) {
+    // Point Tool (270, 20, 40, 40)
+    if (mouseX >= 270 && mouseX <= 310 && mouseY >= 20 && mouseY <= 60) {
+        if (!isPointMode) {
+            // Disable all other tools
             isDrawMode = false;
             isSelectMode = false;
+            isCurveMode = false;
             selectedLine = null;
             selectedPoint = null;
+            selectedCurve = null;
+            isPointMode = true;
+        } else {
+            isPointMode = false;
         }
         updateTooltip();
         redrawAll();
         return;
     }
 
-    if (mouseX >= 20 && mouseX <= 60 && mouseY >= 20 && mouseY <= 60) {
-        isDrawMode = !isDrawMode;
-        if (isDrawMode) {
+    // Line Tool (120, 20, 40, 40)
+    if (mouseX >= 120 && mouseX <= 160 && mouseY >= 20 && mouseY <= 60) {
+        if (!isDrawMode) {
+            // Disable all other tools
             isSelectMode = false;
             isPointMode = false;
+            isCurveMode = false;
             selectedLine = null;
             selectedPoint = null;
+            selectedCurve = null;
+            isDrawMode = true;
         } else {
+            isDrawMode = false;
             startPoint = null;
             tempEndPoint = null;
         }
@@ -761,37 +771,54 @@ function mousePressed() {
         return;
     }
 
-    if (mouseX >= 70 && mouseX <= 110 && mouseY >= 20 && mouseY <= 60) {
+    // Snap Tool (170, 20, 40, 40)
+    if (mouseX >= 170 && mouseX <= 210 && mouseY >= 20 && mouseY <= 60) {
         isSnapMode = !isSnapMode;
         drawSnapButton();
         return;
     }
 
-    if (mouseX >= 120 && mouseX <= 160 && mouseY >= 20 && mouseY <= 60) {
-        isSelectMode = !isSelectMode;
-        if (isSelectMode) {
+    // Select Tool (220, 20, 40, 40)
+    if (mouseX >= 220 && mouseX <= 260 && mouseY >= 20 && mouseY <= 60) {
+        if (!isSelectMode) {
+            // Disable all other tools
             isDrawMode = false;
             isPointMode = false;
+            isCurveMode = false;
+            startPoint = null;
+            tempEndPoint = null;
+            isSelectMode = true;
+        } else {
+            isSelectMode = false;
         }
         updateTooltip();
         redrawAll();
         return;
     }
 
-    if (mouseX >= 220 && mouseX <= 260 && mouseY >= 20 && mouseY <= 60) {
-        isCurveMode = !isCurveMode;
-        if (isCurveMode) {
+    // Curve Tool (320, 20, 40, 40)
+    if (mouseX >= 320 && mouseX <= 360 && mouseY >= 20 && mouseY <= 60) {
+        if (!isCurveMode) {
+            // Disable all other tools
             isDrawMode = false;
             isSelectMode = false;
+            isPointMode = false;
             selectedLine = null;
             selectedPoint = null;
+            selectedCurve = null;
+            isCurveMode = true;
+        } else {
+            isCurveMode = false;
+            startPoint = null;
+            tempEndPoint = null;
         }
         updateTooltip();
         redrawAll();
         return;
     }
 
-    if (mouseX >= 270 && mouseX <= 310 && mouseY >= 20 && mouseY <= 60) {
+    // Labels Tool (370, 20, 40, 40)
+    if (mouseX >= 370 && mouseX <= 410 && mouseY >= 20 && mouseY <= 60) {
         showLabels = !showLabels;
         redrawAll();
         return;
