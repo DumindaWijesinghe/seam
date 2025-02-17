@@ -53,6 +53,12 @@ let isResizingTree = false;
 let treeMinWidth = 150;
 let treeMaxWidth = 400;
 
+// Add at the top with other state variables
+let showLabels = true;
+
+// Add at the top with other state variables
+let buttonTooltip = '';
+
 function saveState(action) {
     redoStack = [];
     undoStack.push({
@@ -174,6 +180,7 @@ function setup() {
     drawSelectButton();
     drawPointButton();
     drawCurveButton();
+    drawLabelsButton();
     drawZoomSlider();
 
     // Initialize tooltip
@@ -261,36 +268,12 @@ function drawCurveButton() {
     fill(isCurveMode ? 150 : 200);
     stroke(0);
     rect(220, 20, 40, 40);
+}
 
-    // Draw curve icon
+function drawLabelsButton() {
+    fill(showLabels ? 150 : 200);
     stroke(0);
-    strokeWeight(2);
-    noFill();
-
-    // Draw a sample Bézier curve
-    let startX = 225;
-    let startY = 50;
-    let endX = 255;
-    let endY = 30;
-    let control1X = 225;
-    let control1Y = 25;
-    let control2X = 255;
-    let control2Y = 55;
-
-    bezier(
-        startX, startY,      // Start point
-        control1X, control1Y, // First control point
-        control2X, control2Y, // Second control point
-        endX, endY          // End point
-    );
-
-    // Draw small dots at the endpoints
-    fill(0);
-    noStroke();
-    circle(startX, startY, 4);
-    circle(endX, endY, 4);
-
-    strokeWeight(1);
+    rect(270, 20, 40, 40);
 }
 
 function drawZoomSlider() {
@@ -356,6 +339,7 @@ function calculateLength(start, end) {
 }
 
 function drawLineLength(line) {
+    if (!showLabels) return;
     let startPx = gridToPixel(line.start);
     let endPx = gridToPixel(line.end);
     let midX = (startPx.x + endPx.x) / 2;
@@ -495,6 +479,7 @@ function drawPoints() {
 }
 
 function drawPointDistances(pointPx, distToStart, distToEnd) {
+    if (!showLabels) return;
     let scaledTextSize = 10 * Math.sqrt(zoomLevel);
 
     // Draw background for distances
@@ -642,6 +627,41 @@ function findNearestSnapPoint(mousePoint) {
 function mouseMoved() {
     let mousePoint = { x: mouseX, y: mouseY };
 
+    // Check button tooltips first
+    if (mouseY >= 20 && mouseY <= 60) {
+        if (mouseX >= 20 && mouseX <= 60) {
+            buttonTooltip = "Line Tool (Click to draw lines)";
+            redrawAll();
+            return;
+        } else if (mouseX >= 70 && mouseX <= 110) {
+            buttonTooltip = "Snap Mode (Toggle grid and point snapping)";
+            redrawAll();
+            return;
+        } else if (mouseX >= 120 && mouseX <= 160) {
+            buttonTooltip = "Select Tool (Edit and move objects)";
+            redrawAll();
+            return;
+        } else if (mouseX >= 170 && mouseX <= 210) {
+            buttonTooltip = "Point Tool (Place points on lines or canvas)";
+            redrawAll();
+            return;
+        } else if (mouseX >= 220 && mouseX <= 260) {
+            buttonTooltip = "Curve Tool (Draw Bézier curves)";
+            redrawAll();
+            return;
+        } else if (mouseX >= 270 && mouseX <= 310) {
+            buttonTooltip = "Labels (Toggle measurements display)";
+            redrawAll();
+            return;
+        }
+    }
+
+    // Clear tooltip if not over any button
+    if (buttonTooltip) {
+        buttonTooltip = '';
+        redrawAll();
+    }
+
     if (isDrawMode || isCurveMode) {
         // Clear previous states
         hoverSnapPoint = null;
@@ -767,6 +787,12 @@ function mousePressed() {
             selectedPoint = null;
         }
         updateTooltip();
+        redrawAll();
+        return;
+    }
+
+    if (mouseX >= 270 && mouseX <= 310 && mouseY >= 20 && mouseY <= 60) {
+        showLabels = !showLabels;
         redrawAll();
         return;
     }
@@ -1084,6 +1110,7 @@ function redrawAll() {
     drawSelectButton();
     drawPointButton();
     drawCurveButton();
+    drawLabelsButton();
     drawZoomSlider();
 
     for (let l of lines) {
@@ -1275,7 +1302,7 @@ function redrawAll() {
     noStroke();
     textAlign(LEFT, CENTER);
     textSize(13);
-    text(tooltipText, padding, height - barHeight / 2);
+    text(buttonTooltip || tooltipText, padding, height - barHeight / 2);
 
     // Reset font for other text
     textFont('sans-serif');
@@ -1525,6 +1552,7 @@ function calculateCurveLength(curve) {
 }
 
 function drawCurveLength(curve) {
+    if (!showLabels) return;
     let startPx = gridToPixel(curve.start);
     let endPx = gridToPixel(curve.end);
     let control1Px = gridToPixel(curve.control1);
