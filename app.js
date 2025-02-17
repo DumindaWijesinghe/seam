@@ -96,6 +96,32 @@ function keyPressed() {
         return false;
     }
 
+    // Handle delete key
+    if (keyCode === DELETE || keyCode === BACKSPACE) {
+        if (isSelectMode) {
+            if (selectedPoint) {
+                points = points.filter(p => p !== selectedPoint);
+                selectedPoint = null;
+                saveState('delete_point');
+                redrawAll();
+                return false;
+            } else if (selectedLine) {
+                lines = lines.filter(l => l !== selectedLine);
+                selectedLine = null;
+                saveState('delete_line');
+                redrawAll();
+                return false;
+            } else if (selectedCurve) {
+                curves = curves.filter(c => c !== selectedCurve);
+                selectedCurve = null;
+                selectedControlPoint = null;
+                saveState('delete_curve');
+                redrawAll();
+                return false;
+            }
+        }
+    }
+
     if (isEditingLength) {
         if (keyCode === ENTER || keyCode === RETURN) {
             let newLength = parseFloat(editLengthInput);
